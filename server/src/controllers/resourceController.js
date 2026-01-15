@@ -14,10 +14,67 @@ function withDbTimeout(promise, timeoutMs = 4000) {
 
 async function listResources(req, res, next) {
   try {
-    console.log('listResources: received request');
+    console.log('listResources: received request with query:', req.query);
     try {
-      const result = await withDbTimeout(db.query('SELECT id, name, description, price, image, location, tags, images, created_at FROM resources ORDER BY id DESC'));
+      const { town, type, minPrice, maxPrice, bedrooms, search } = req.query;
+
+      let query = 'SELECT id, name, description, price, image, location, tags, images, bedrooms, type, status, created_at FROM resources WHERE status = \'active\'';
+      const params = [];
+      const whereClauses = [];
+
+      // Location filter
+      if (town && town !== 'All') {
+        params.push(town);
+        whereClauses.push(`location = $${params.length}`);
+      }
+
+      // Type filter
+      if (type && type !== 'All') {
+        params.push(type);
+        whereClauses.push(`type = $${params.length}`);
+      }
+
+      // Bedrooms filter
+      if (bedrooms && bedrooms !== 'Any') {
+        const beds = parseInt(bedrooms);
+        if (!isNaN(beds)) {
+          if (bedrooms === '4+') {
+            params.push(4);
+            whereClauses.push(`bedrooms >= $${params.length}`);
+          } else {
+            params.push(beds);
+            whereClauses.push(`bedrooms = $${params.length}`);
+          }
+        }
+      }
+
+      // Price range filter
+      if (minPrice && maxPrice) {
+        const min = parseFloat(minPrice);
+        const max = parseFloat(maxPrice);
+        if (!isNaN(min) && !isNaN(max)) {
+          params.push(min, max);
+          whereClauses.push(`price BETWEEN $${params.length - 1} AND $${params.length}`);
+        }
+      }
+
+      // Search filter (name or location)
+      if (search && search.trim()) {
+        params.push(`%${search.trim()}%`);
+        whereClauses.push(`(name ILIKE $${params.length} OR location ILIKE $${params.length})`);
+      }
+
+      // Add additional WHERE clauses if any
+      if (whereClauses.length > 0) {
+        query += ' AND ' + whereClauses.join(' AND ');
+      }
+
+      query += ' ORDER BY created_at DESC';
+
+      console.log('Final query:', query, 'Params:', params);
+      const result = await withDbTimeout(db.query(query, params));
       console.log('listResources: db query returned rows=', (result.rows || []).length);
+
       // Map DB rows to the shape frontend expects (without inventing defaults)
       const mapped = (result.rows || []).map(mapResource);
       return res.json({ success: true, data: mapped, message: 'Resources fetched' });
@@ -57,12 +114,14 @@ async function getResource(req, res, next) {
 
 async function createResource(req, res, next) {
   try {
-    const { name, description, price, image, location, tags } = req.body;
+    const { name, description, price, location, tags, bedrooms, type } = req.body;
     const userId = req.user ? req.user.id : null;
-    console.log('createResource: name=', name, 'userId=', userId);
+
+    // Get image URL from Cloudinary upload (req.file.path) or use provided URL
+    const imageUrl = req.file ? req.file.path : req.body.image || null;
+
+    console.log('createResource: name=', name, 'userId=', userId, 'imageUrl=', imageUrl ? 'provided' : 'none');
     try {
-      // Attempt to persist all provided fields. If the DB schema doesn't support some columns,
-      // the query will fail and we'll fall back to the local store.
       // Prepare tags as JSON when provided so it fits jsonb column safely
       const tagsParam = Array.isArray(tags)
         ? JSON.stringify(tags)
@@ -74,10 +133,10 @@ async function createResource(req, res, next) {
         ? JSON.stringify(req.body.images)
         : null;
 
-      const values = [name, description || null, price || null, image || null, location || null, tagsParam, imagesParam, userId];
+      const values = [name, description || null, price || null, imageUrl, location || null, tagsParam, imagesParam, bedrooms || 1, type || 'Apartment', userId];
       const result = await withDbTimeout(
         db.query(
-          'INSERT INTO resources (name, description, price, image, location, tags, images, user_id) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8) RETURNING id, name, description, price, image, location, tags, images, created_at',
+          'INSERT INTO resources (name, description, price, image, location, tags, images, bedrooms, type, user_id) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10) RETURNING id, name, description, price, image, location, tags, images, bedrooms, type, status, created_at',
           values
         )
       );
@@ -86,7 +145,18 @@ async function createResource(req, res, next) {
     } catch (err) {
       // persist to local fallback store
       console.warn('createResource: db insert failed/timed out, fallback', err.message);
-      const item = await localStore.createResource({ name, description, price, image, location, tags, images: req.body.images, user_id: userId });
+      const item = await localStore.createResource({
+        name,
+        description,
+        price,
+        image: imageUrl,
+        location,
+        tags,
+        images: req.body.images,
+        bedrooms: bedrooms || 1,
+        type: type || 'Apartment',
+        user_id: userId
+      });
       console.log('createResource: fallback created id=', item.id);
       return res.status(201).json({ success: true, data: mapResource(item), message: 'Resource created (fallback)' });
     }
