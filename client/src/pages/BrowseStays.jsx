@@ -1,44 +1,120 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PropertyCard from '../components/PropertyCard';
 
 export default function BrowseStays() {
   const [stays, setStays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTown, setSelectedTown] = useState('');
-  const [selectedFeatures, setSelectedFeatures] = useState([]);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    import('../lib/api').then(({ get }) => {
-      get('/api/resource')
-        .then((data) => {
-          if (!mounted) return;
-          if (data && data.success) setStays(data.data || []);
-          else setError(data ? data.message : 'Unexpected response');
-        })
-        .catch((err) => {
-          if (!mounted) return;
-          setError(err.message || 'Failed to fetch');
-        })
-        .finally(() => mounted && setLoading(false));
-    });
+  // Initialize state from URL params
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [selectedTown, setSelectedTown] = useState(searchParams.get('town') || '');
+  const [selectedType, setSelectedType] = useState(searchParams.get('type') || '');
+  const [selectedBedrooms, setSelectedBedrooms] = useState(searchParams.get('bedrooms') || 'Any');
+  const [minPrice, setMinPrice] = useState(searchParams.get('minPrice') || '0');
+  const [maxPrice, setMaxPrice] = useState(searchParams.get('maxPrice') || '500000');
 
-    return () => {
-      mounted = false;
-    };
+  // Debounced fetch function
+  const fetchProperties = useCallback(async (filters) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const queryParams = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value && value !== 'Any' && value !== 'All' && value !== '') {
+          queryParams.append(key, value);
+        }
+      });
+
+      const url = `/api/resource${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+      const { get } = await import('../lib/api');
+      const response = await get(url);
+
+      if (response && response.success) {
+        setStays(response.data || []);
+      } else {
+        setError(response ? response.message : 'Unexpected response');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to fetch properties');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const filteredStays = stays.filter(stay => {
-    const matchesSearch = !searchQuery ||
-      (stay.title || stay.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (stay.location || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTown = !selectedTown || stay.location === selectedTown;
-    const matchesFeatures = selectedFeatures.length === 0 || selectedFeatures.every(feat => (stay.tags || []).includes(feat));
-    return matchesSearch && matchesTown && matchesFeatures;
-  });
+  // Update URL params when filters change
+  const updateFilters = useCallback((newFilters) => {
+    const updatedFilters = {
+      search: searchQuery,
+      town: selectedTown,
+      type: selectedType,
+      bedrooms: selectedBedrooms,
+      minPrice,
+      maxPrice,
+      ...newFilters
+    };
+
+    // Update state
+    if (newFilters.search !== undefined) setSearchQuery(newFilters.search);
+    if (newFilters.town !== undefined) setSelectedTown(newFilters.town);
+    if (newFilters.type !== undefined) setSelectedType(newFilters.type);
+    if (newFilters.bedrooms !== undefined) setSelectedBedrooms(newFilters.bedrooms);
+    if (newFilters.minPrice !== undefined) setMinPrice(newFilters.minPrice);
+    if (newFilters.maxPrice !== undefined) setMaxPrice(newFilters.maxPrice);
+
+    // Update URL params
+    const newSearchParams = new URLSearchParams();
+    Object.entries(updatedFilters).forEach(([key, value]) => {
+      if (value && value !== 'Any' && value !== 'All' && value !== '') {
+        newSearchParams.set(key, value);
+      }
+    });
+    setSearchParams(newSearchParams);
+
+    return updatedFilters;
+  }, [searchQuery, selectedTown, selectedType, selectedBedrooms, minPrice, maxPrice, setSearchParams]);
+
+  // Debounced effect for API calls
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      const filters = {
+        search: searchQuery,
+        town: selectedTown,
+        type: selectedType,
+        bedrooms: selectedBedrooms,
+        minPrice,
+        maxPrice
+      };
+      fetchProperties(filters);
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, selectedTown, selectedType, selectedBedrooms, minPrice, maxPrice, fetchProperties]);
+
+  // Handle filter changes
+  const handleSearchChange = (value) => {
+    updateFilters({ search: value });
+  };
+
+  const handleTownChange = (town) => {
+    updateFilters({ town: selectedTown === town ? '' : town });
+  };
+
+  const handleTypeChange = (type) => {
+    updateFilters({ type: selectedType === type ? '' : type });
+  };
+
+  const handleBedroomsChange = (bedrooms) => {
+    updateFilters({ bedrooms });
+  };
+
+  const handlePriceChange = (min, max) => {
+    updateFilters({ minPrice: min, maxPrice: max });
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10">
@@ -51,7 +127,7 @@ export default function BrowseStays() {
           type="text"
           placeholder="Search properties by name or location..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => handleSearchChange(e.target.value)}
           className="w-full p-4 pl-6 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#007EA7]/20 transition-all"
         />
       </div>
@@ -66,7 +142,7 @@ export default function BrowseStays() {
               {['Mombasa', 'Diani', 'Kilifi', 'Watamu', 'Malindi'].map((town) => (
                 <button
                   key={town}
-                  onClick={() => setSelectedTown(selectedTown === town ? '' : town)}
+                  onClick={() => handleTownChange(town)}
                   className={`w-full text-left px-4 py-2 rounded-xl font-medium hover:bg-[#007EA7] hover:text-white transition-all text-sm ${
                     selectedTown === town ? 'bg-[#007EA7] text-white' : 'bg-gray-100 text-gray-700'
                   }`}
@@ -77,36 +153,65 @@ export default function BrowseStays() {
             </div>
           </div>
 
-          {/* Features Filter */}
+          {/* Property Type Filter */}
           <div>
-            <h3 className="font-bold text-lg mb-4">Features</h3>
+            <h3 className="font-bold text-lg mb-4">Property Type</h3>
             <div className="space-y-2">
-              {['Beachfront', 'Ferry-free', 'Walkable'].map((feat) => (
+              {['Apartment', 'Villa', 'House', 'Condo'].map((type) => (
                 <button
-                  key={feat}
-                  onClick={() => setSelectedFeatures(prev => prev.includes(feat) ? prev.filter(f => f !== feat) : [...prev, feat])}
-                  className={`w-full text-left px-4 py-2 rounded-xl font-medium text-sm transition-all ${
-                    selectedFeatures.includes(feat) ? 'bg-[#007EA7] text-white' : 'bg-gray-100 text-gray-700 hover:bg-[#007EA7] hover:text-white'
+                  key={type}
+                  onClick={() => handleTypeChange(type)}
+                  className={`w-full text-left px-4 py-2 rounded-xl font-medium hover:bg-[#007EA7] hover:text-white transition-all text-sm ${
+                    selectedType === type ? 'bg-[#007EA7] text-white' : 'bg-gray-100 text-gray-700'
                   }`}
                 >
-                  {feat}
+                  {type}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Price Range Slider */}
+          {/* Price Range */}
           <div>
-            <div className="h-1 w-full bg-[#007EA7] rounded-full relative mb-8">
-              <div className="absolute right-0 -top-1.5 w-4 h-4 bg-slate-500 rounded-full border-2 border-white shadow-sm"></div>
+            <h3 className="font-bold text-lg mb-4">Price Range</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Min Price</label>
+                  <input
+                    type="number"
+                    value={minPrice}
+                    onChange={(e) => handlePriceChange(e.target.value, maxPrice)}
+                    placeholder="0"
+                    className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#007EA7]/20 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Max Price</label>
+                  <input
+                    type="number"
+                    value={maxPrice}
+                    onChange={(e) => handlePriceChange(minPrice, e.target.value)}
+                    placeholder="500000"
+                    className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#007EA7]/20 outline-none"
+                  />
+                </div>
+              </div>
+              <div className="text-sm text-gray-500">
+                Showing properties priced between KES {parseInt(minPrice || 0).toLocaleString()} and KES {parseInt(maxPrice || 500000).toLocaleString()}
+              </div>
             </div>
           </div>
 
           {/* Bedrooms Dropdown */}
           <div>
             <h3 className="font-bold text-lg mb-4">Bedrooms</h3>
-            <select className="w-full p-3 bg-white border border-gray-200 rounded-xl text-slate-700 font-medium outline-none">
-              <option value="all">All</option>
+            <select
+              value={selectedBedrooms}
+              onChange={(e) => handleBedroomsChange(e.target.value)}
+              className="w-full p-3 bg-white border border-gray-200 rounded-xl text-slate-700 font-medium outline-none focus:ring-2 focus:ring-[#007EA7]/20"
+            >
+              <option value="Any">Any</option>
               <option value="1">1 Bedroom</option>
               <option value="2">2 Bedrooms</option>
               <option value="3">3 Bedrooms</option>
@@ -119,8 +224,8 @@ export default function BrowseStays() {
         <div className="flex-1 grid md:grid-cols-2 gap-8 items-start">
           {loading && <div>Loading properties...</div>}
           {error && <div className="text-red-600">{error}</div>}
-          {!loading && !error && filteredStays.length === 0 && <div>No properties found.</div>}
-          {!loading && !error && filteredStays.map((stay) => (
+          {!loading && !error && stays.length === 0 && <div>No properties found.</div>}
+          {!loading && !error && stays.map((stay) => (
             <PropertyCard key={stay.id} stay={stay} />
           ))}
         </div>
