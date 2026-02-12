@@ -1,5 +1,5 @@
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('cloudinary').v2;
-const CloudinaryStorage = require('multer-storage-cloudinary');
 
 // Ensure keys are loaded from .env
 cloudinary.config({
@@ -14,7 +14,7 @@ const storage = new CloudinaryStorage({
     return {
       folder: 'pwanystay_properties',
       // Convert all images to webp to save mobile data for users
-      format: 'webp', 
+      format: 'webp',
       // Force consistent 3:2 aspect ratio for the property grid
       transformation: [
         { width: 1200, height: 800, crop: 'fill', gravity: 'auto' },
