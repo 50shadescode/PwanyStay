@@ -18,6 +18,19 @@ export interface SearchParams {
   check_out?: string;
 }
 
+export interface RegisterData {
+  name: string;
+  email: string;
+  phone_number: string;
+  password: string;
+  role?: "GUEST" | "HOST";
+}
+
+export interface AuthToken {
+  access_token: string;
+  token_type: string;
+}
+
 export async function searchListings(params: SearchParams): Promise<Listing[]> {
   const query = new URLSearchParams();
 
@@ -33,6 +46,40 @@ export async function searchListings(params: SearchParams): Promise<Listing[]> {
 
   if (!res.ok) {
     throw new Error("Failed to fetch listings from FastAPI backend");
+  }
+
+  return res.json();
+}
+
+export async function registerUser(data: RegisterData) {
+  const res = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || "Registration failed");
+  }
+
+  return res.json();
+}
+
+export async function loginUser(email: string, password: string): Promise<AuthToken> {
+  const formData = new URLSearchParams();
+  formData.append("username", email);
+  formData.append("password", password);
+
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formData.toString(),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || "Invalid login credentials");
   }
 
   return res.json();

@@ -32,3 +32,21 @@ class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     hashed_password: str = Field()
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# --- Schemas for Auth Requests & Responses ---
+
+class UserCreate(UserBase):
+    password: str
+
+class UserResponse(SQLModel):
+    id: int
+    name: str
+    email: str
+    phone_number: str
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+
+class Token(SQLModel):
+    access_token: str
+    token_type: str = "bearer"
