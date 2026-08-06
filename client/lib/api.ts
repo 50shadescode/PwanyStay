@@ -31,6 +31,25 @@ export interface AuthToken {
   token_type: string;
 }
 
+export interface BookingCreateData {
+  listing_id: number;
+  check_in: string;
+  check_out: string;
+  total_guests: number;
+}
+
+export interface BookingResponse {
+  id: number;
+  listing_id: number;
+  guest_id: number;
+  check_in: string;
+  check_out: string;
+  total_guests: number;
+  total_price: number;
+  status: "PENDING" | "CONFIRMED" | "CANCELLED";
+  created_at: string;
+}
+
 export async function searchListings(params: SearchParams): Promise<Listing[]> {
   const query = new URLSearchParams();
 
@@ -80,6 +99,42 @@ export async function loginUser(email: string, password: string): Promise<AuthTo
   if (!res.ok) {
     const errorData = await res.json();
     throw new Error(errorData.detail || "Invalid login credentials");
+  }
+
+  return res.json();
+}
+
+export async function createBooking(
+  data: BookingCreateData,
+  token: string
+): Promise<BookingResponse> {
+  const res = await fetch(`${API_BASE_URL}/bookings/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || "Failed to create reservation");
+  }
+
+  return res.json();
+}
+
+export async function getUserBookings(token: string): Promise<BookingResponse[]> {
+  const res = await fetch(`${API_BASE_URL}/bookings/me`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.detail || "Failed to fetch reservations");
   }
 
   return res.json();
