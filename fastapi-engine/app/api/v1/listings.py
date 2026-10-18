@@ -1,5 +1,5 @@
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 from app.core.db import engine
 from app.models.listing import Listing, ListingBase
@@ -40,3 +40,11 @@ def list_listings(
         query = query.where(Listing.has_pool == has_pool)
         
     return db.exec(query).all()
+
+
+@router.get("/{listing_id}", response_model=Listing)
+def get_listing(listing_id: int, db: Session = Depends(get_db)):
+    listing = db.get(Listing, listing_id)
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    return listing

@@ -31,6 +31,16 @@ export interface AuthToken {
   token_type: string;
 }
 
+export interface UserResponse {
+  id: number;
+  name: string;
+  email: string;
+  phone_number: string;
+  role: "GUEST" | "HOST" | "ADMIN";
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface BookingCreateData {
   listing_id: number;
   check_in: string;
@@ -70,7 +80,28 @@ export async function searchListings(params: SearchParams): Promise<Listing[]> {
   return res.json();
 }
 
-export async function registerUser(data: RegisterData) {
+async function authErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body: unknown = await response.json();
+    if (typeof body !== "object" || body === null || !("detail" in body)) return fallback;
+    if (typeof body.detail === "string") return body.detail || fallback;
+    if (Array.isArray(body.detail)) {
+      const messages = body.detail.flatMap((issue: unknown) => {
+        if (typeof issue !== "object" || issue === null || !("msg" in issue) || typeof issue.msg !== "string") return [];
+        const field = "loc" in issue && Array.isArray(issue.loc)
+          ? issue.loc.filter((part: unknown) => typeof part === "string" && part !== "body").join(" ")
+          : "";
+        return [field ? `${field.replaceAll("_", " ")}: ${issue.msg}` : issue.msg];
+      });
+      return messages.join(". ") || fallback;
+    }
+  } catch {
+    // Non-JSON server errors still receive a readable fallback.
+  }
+  return fallback;
+}
+
+export async function registerUser(data: RegisterData): Promise<UserResponse> {
   const res = await fetch(`${API_BASE_URL}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -78,8 +109,7 @@ export async function registerUser(data: RegisterData) {
   });
 
   if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(errorData.detail || "Registration failed");
+    throw new Error(await authErrorMessage(res, "Registration failed. Please try again."));
   }
 
   return res.json();
@@ -97,8 +127,7 @@ export async function loginUser(email: string, password: string): Promise<AuthTo
   });
 
   if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(errorData.detail || "Invalid login credentials");
+    throw new Error(await authErrorMessage(res, "Invalid login credentials. Please check your email and password."));
   }
 
   return res.json();

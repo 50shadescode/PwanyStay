@@ -3,12 +3,20 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Menu, X, ChevronDown, Compass, HelpCircle, LayoutGrid } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import LoginModal from "./auth/LoginModal";
+import RegisterModal from "./auth/RegisterModal";
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [authModal, setAuthModal] = useState<"login" | "register" | null>(null);
+  const { user, isLoading, logout } = useAuth();
+  const displayName = user?.name?.trim() || user?.email.split("@")[0] || "Guest";
+  const initials = displayName.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 
   return (
+    <>
     <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-xs">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
@@ -52,19 +60,24 @@ export default function Navbar() {
             </div>
 
             {/* Micro Profile Settings Shell Dropdown */}
-            <div className="relative">
+            {user ? <div className="relative">
               <button
+                type="button"
+                aria-label={`Account for ${displayName}`}
+                aria-expanded={isProfileOpen}
+                aria-controls="account-dropdown"
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 className="flex items-center gap-1.5 p-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition cursor-pointer"
               >
                 <div className="h-7 w-7 rounded-lg bg-slate-200 font-bold text-xs text-slate-700 flex items-center justify-center uppercase shadow-2xs">
-                  MO
+                  {initials}
                 </div>
                 <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
               </button>
 
               {isProfileOpen && (
-                <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                <div id="account-dropdown" className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                  <p className="truncate px-3 py-2 text-xs font-semibold text-slate-500" title={user.email}>{user.name || user.email}</p>
                   <Link href="/profile" className="block px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg">
                     My Profile
                   </Link>
@@ -76,14 +89,22 @@ export default function Navbar() {
                   </Link>
                   <div className="h-px bg-slate-100 my-1" />
                   <button
+                    type="button"
                     className="block w-full px-3 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg"
-                    onClick={() => setIsProfileOpen(false)}
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      setIsOpen(false);
+                      logout();
+                    }}
                   >
                     Sign Out
                   </button>
                 </div>
               )}
-            </div>
+            </div> : <div className="flex items-center gap-2" aria-busy={isLoading}>
+              <button type="button" disabled={isLoading} onClick={() => setAuthModal("login")} className="rounded-xl px-2 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-50 sm:px-3">Log In</button>
+              <button type="button" disabled={isLoading} onClick={() => setAuthModal("register")} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50">Sign Up</button>
+            </div>}
 
             {/* Mobile Sidebar Navigation Toggle Trigger */}
             <button
@@ -118,5 +139,8 @@ export default function Navbar() {
         </div>
       )}
     </nav>
+    {authModal === "login" && <LoginModal onClose={() => setAuthModal(null)} onSwitchToRegister={() => setAuthModal("register")} />}
+    {authModal === "register" && <RegisterModal onClose={() => setAuthModal(null)} onSwitchToLogin={() => setAuthModal("login")} />}
+    </>
   );
 }

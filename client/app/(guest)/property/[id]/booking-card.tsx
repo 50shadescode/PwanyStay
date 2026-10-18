@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createBooking } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 
 interface BookingCardProps {
   listingId: number;
@@ -9,6 +10,7 @@ interface BookingCardProps {
 }
 
 export default function BookingCard({ listingId, pricePerNight }: BookingCardProps) {
+  const { user, token, isLoading } = useAuth();
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState(1);
@@ -29,8 +31,14 @@ export default function BookingCard({ listingId, pricePerNight }: BookingCardPro
 
   const handleReserve = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading || submitting) return;
     setError(null);
     setSuccessMsg(null);
+
+    if (!user || !token) {
+      setError('Please log in using the Log In button in the navbar before reserving this property.');
+      return;
+    }
 
     if (!checkIn || !checkOut || nights <= 0) {
       setError('Check-out date must be after check-in date.');
@@ -40,12 +48,6 @@ export default function BookingCard({ listingId, pricePerNight }: BookingCardPro
     setSubmitting(true);
 
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') || '' : '';
-
-      if (!token) {
-        throw new Error('Please log in to make a reservation.');
-      }
-
       const booking = await createBooking(
         {
           listing_id: listingId,
@@ -57,8 +59,8 @@ export default function BookingCard({ listingId, pricePerNight }: BookingCardPro
       );
 
       setSuccessMsg(`Reservation created! Booking ref: #${booking.id} (${booking.status})`);
-    } catch (err: any) {
-      setError(err.message || 'Failed to complete reservation');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to complete reservation');
     } finally {
       setSubmitting(false);
     }
@@ -73,10 +75,10 @@ export default function BookingCard({ listingId, pricePerNight }: BookingCardPro
         <span className="text-gray-500 text-sm">/ night</span>
       </div>
 
-      {error && <div className="p-3 bg-red-50 text-red-700 rounded-xl text-sm">{error}</div>}
-      {successMsg && <div className="p-3 bg-green-50 text-green-700 rounded-xl text-sm font-medium">{successMsg}</div>}
+      {error && <div role="alert" className="p-3 bg-red-50 text-red-700 rounded-xl text-sm">{error}</div>}
+      {successMsg && <div role="status" className="p-3 bg-green-50 text-green-700 rounded-xl text-sm font-medium">{successMsg}</div>}
 
-      <form onSubmit={handleReserve} className="space-y-4">
+      <form onSubmit={handleReserve} noValidate={!user || !token} className="space-y-4">
         <div className="grid grid-cols-2 gap-2 border border-gray-200 rounded-xl p-3 bg-gray-50">
           <div>
             <label className="block text-[10px] font-bold uppercase text-gray-500">Check-in</label>
@@ -130,10 +132,10 @@ export default function BookingCard({ listingId, pricePerNight }: BookingCardPro
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || isLoading}
           className="w-full bg-emerald-600 text-white font-semibold py-3 rounded-xl hover:bg-emerald-700 transition disabled:opacity-50"
         >
-          {submitting ? 'Processing...' : 'Reserve Property'}
+          {isLoading ? 'Checking session...' : submitting ? 'Processing...' : 'Reserve Property'}
         </button>
       </form>
     </div>
